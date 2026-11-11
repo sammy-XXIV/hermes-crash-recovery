@@ -1,101 +1,178 @@
 # Hermes Crash Recovery
 
-**An action happened. Hermes crashed before recording the answer. What happens when it tries again?**
+A native Hermes Agent plugin that journals protected tool invocations before dispatch and blocks further protected work when an earlier outcome is unresolved. The journal uses a SHA-256 hash chain and a separate local checkpoint to detect inconsistent or modified history.
 
-Crash Recovery keeps a durable, hash-chained tool-call journal and refuses protected actions while any previous action has an unresolved outcome. A restart, new session, different arguments, or a different tool does not clear the recovery gate.
+The recovery gate is **profile-wide**: restarting Hermes, opening a new session, changing arguments, or switching tools does not release a pending operation. An operator must reconcile the outcome using independent evidence.
 
-Native Hermes plugin. Python standard library only. No hosted service, API key, model calls, or telemetry.
+[CI](https://github.com/sammy-XXIV/hermes-crash-recovery/actions/workflows/tests.yml) · [Native demo evidence](docs/native-demo/README.md) · [Verification report](docs/verification.md) · [Catalog PR](https://github.com/NousResearch/hermes-agent/pull/153183)
 
-## Try the crash demo
+## Execution contract
 
-Python 3.11 or newer:
+| Condition | Behavior |
+|---|---|
+| Valid journal; no unresolved operation | Persist execution intent, then invoke the downstream callback once |
+| Normal tool response | Append a `returned` event and release the gate |
+| Exception, cancellation, or recognized error response | Preserve an uncertain outcome; refuse further protected calls |
+| Process terminates before a terminal event is recorded | The durable `started` record remains pending after restart |
+| Pending or uncertain operation exists | Refuse protected calls across the entire active profile |
+| Journal or checkpoint verification fails | Refuse protected calls without invoking their downstream callback |
+| Recording fails after downstream execution | Report an unknown outcome and block further protected calls in that guard instance |
+| Operator reconciles an operation | Append a resolution event; allow subsequent normal calls |
 
-```console
-python demo.py
-```
+This is a conservative recovery mechanism. It does not automatically replay work, deduplicate intentionally repeated completed calls, or establish exactly-once execution in an external service. A tool response and an externally verified business outcome are different facts.
 
-The demo starts a worker process, commits a fictional booking to a separate service database, then **force-kills the worker before its tool call returns**. A new process attempts another booking with changed arguments. Recovery blocks it. An independent database query finds exactly one booking, and an operator reconciliation closes the pending journal record.
+## Requirements and installation
 
-Expected report:
+- Hermes Agent **0.23.1 or newer**.
+- Python **3.11 or newer** for the standalone demo and operator utilities.
+- Local storage with reliable SQLite locking and filesystem replacement semantics.
+- No additional Python dependencies, API keys, hosted services, or model calls in the runtime plugin.
 
-```json
-{
-  "bookings": 1,
-  "repeat_blocked": true,
-  "integrity_ok": true,
-  "unresolved_after_resolution": 0
-}
-```
-
-To retain the journal and fictional service database, use a directory that does not already exist:
-
-```console
-python demo.py --directory demo-run
-```
-
-This deterministic demo exercises the guard directly. It does not involve a model, a real booking service, or an installed Hermes session. Native Hermes integration is checked separately below.
-
-## Install locally
-
-Requires Hermes 0.23.1 or newer. Copy this repository into the active profile's `plugins/crash-recovery` directory, then enable it:
-
-```console
-hermes plugins enable crash-recovery
-hermes plugins doctor crash-recovery --ci
-```
-
-For the default profile on PowerShell, from the directory containing this repository:
-
-```powershell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.hermes\plugins" | Out-Null
-Copy-Item -LiteralPath .\hermes-crash-recovery -Destination "$env:USERPROFILE\.hermes\plugins\crash-recovery" -Recurse
-hermes plugins enable crash-recovery
-hermes plugins doctor crash-recovery --ci
-```
-
-Use the chosen profile's Hermes home when running with profiles or a custom `HERMES_HOME`. Restart Hermes after enabling. Confirm both inspection tools are registered before relying on the guard. A disabled or unloaded plugin cannot protect execution.
-
-You can also install the public repository directly while catalog review is pending:
+Install the public repository and enable the plugin:
 
 ```console
 hermes plugins install sammy-XXIV/hermes-crash-recovery
 hermes plugins enable crash-recovery
+hermes plugins doctor crash-recovery --ci
 ```
 
-## How it works
+Restart Hermes and confirm that `crash_recovery_status` and `crash_recovery_verify` are registered. A disabled or unloaded plugin provides no protection. Catalog installation by the short name depends on maintainer acceptance of the catalog PR; repository installation is available independently.
 
-1. `pre_tool_call` returns an early block directive when recovery is required.
-2. `tool_execution` middleware atomically verifies integrity, checks for unresolved operations, and commits a `started` event before invoking the downstream callback exactly once.
-3. A normal tool response adds a `returned` event. Exceptions, cancellations and recognized error responses preserve uncertainty.
-4. On the next call, durable pending or uncertain records keep the profile-wide recovery gate closed. No session-start hook or clean shutdown is required.
-5. An operator checks the actual service, stops any original worker that might still be running, and appends a reconciliation decision. The plugin never automatically retries an action.
+For local development, place a checkout in the active profile's `plugins/crash-recovery/` directory. Runtime state belongs to that profile's `plugin-data/crash-recovery/` directory and survives plugin updates or removal.
 
-The middleware explicitly returns an error on journal failures before execution. It does not rely on throwing exceptions: Hermes middleware failures can otherwise continue execution. If journaling fails after the downstream call, the guard reports an unknown outcome and refuses further protected calls in that process.
+## Architecture
 
-Hermes versions can place their pre-tool hook inside the execution middleware. A context-local admission permits only the current call to pass its own hook; matching tool-call IDs in another execution context do not bypass the gate. The journal records entry into the protected execution pipeline, which may still include approval or guardrail checks. A rejected call can conservatively remain uncertain and require operator reconciliation even though no external action occurred.
+| Component | Responsibility |
+|---|---|
+| [`__init__.py`](__init__.py) | Register middleware, the pre-tool hook, inspection tools, and configuration |
+| [`RecoveryGuard`](recovery.py) | Enforce admission, invoke downstream execution, classify responses, and preserve uncertainty |
+| [`Journal`](recovery.py) | Serialize admission, append events, reconstruct operation state, and verify integrity |
+| [`operator_cli.py`](operator_cli.py) | Inspect, export checkpoints, and append operator reconciliation decisions |
+| [`plugin.yaml`](plugin.yaml) | Declare the compatibility floor, configuration, tools, hook, and middleware |
 
-## Inspect and reconcile
+The runtime uses documented Hermes extension surfaces: `ctx.register_middleware`, `ctx.register_hook`, `ctx.register_tool`, `ctx.get_config`, and `plugin_data_dir`. It does not replace core functions, override tools, inspect credential stores, or modify Hermes source.
 
-Hermes gets two read-only tools:
-
-- `crash_recovery_status`: unresolved operation IDs, tool names, timestamps and integrity status.
-- `crash_recovery_verify`: hash-chain verification, optionally against a separately retained checkpoint.
-
-There is **no model-facing resolve or replay tool**. Run the operator CLI yourself, with the active profile's data directory:
-
-```console
-python operator_cli.py --data-dir PATH/TO/HERMES_HOME/plugin-data/crash-recovery status
-python operator_cli.py --data-dir PATH/TO/HERMES_HOME/plugin-data/crash-recovery verify
-python operator_cli.py --data-dir PATH/TO/HERMES_HOME/plugin-data/crash-recovery resolve OPERATION_ID --outcome completed --evidence "Checked service receipt 123 after stopping the original worker"
+```mermaid
+flowchart TD
+    A[Protected tool invocation] --> B[Verify journal and local checkpoint]
+    B --> C{Unresolved operation?}
+    C -->|Yes| D[Return blocked result]
+    C -->|No| E[Persist started event and checkpoint]
+    E --> F[Invoke downstream callback once]
+    F -->|Normal response| G[Append returned event]
+    F -->|Error or cancellation| H[Preserve uncertain outcome]
+    F -->|Process crash| I[Started event remains pending]
+    H --> J[Operator checks actual service]
+    I --> J
+    J --> K[Append resolution with evidence]
 ```
 
-Use `--outcome not_applied` only when independent evidence establishes the action did not happen. It releases the gate for a subsequent normal tool call; it does not replay anything. Evidence is saved verbatim: keep secrets out of it.
+### Hook ordering and admission identity
 
-A timeout or dead process does not establish that the action failed. When the outcome cannot be established, leave the operation unresolved. Stop all workers using this profile before reconciling; a process can otherwise still be executing the original action.
+Hermes can place `pre_tool_call` inside `tool_execution` middleware. Recording intent before calling `next_call` would otherwise cause the hook to block its own admitted operation.
 
-## Read-only tools and concurrent work
+The guard binds a `ContextVar` containing the admitted operation UUID and the tuple `(tool_name, session_id, tool_call_id, argument_digest)`. After verifying journal integrity, the hook may exclude only that operation from its unresolved-operation check when the current execution context and tuple match. Matching IDs from another execution context do not bypass recovery. The binding is reset in `finally` on return, exception, or cancellation.
 
-The default exempt tools are `read_file`, `search_files`, and the two inspection tools. Unknown tools are protected. An operator may add exact, trusted read-only tool names under `config.yaml`:
+The downstream pipeline may still contain approvals or guardrails. Consequently, `started` means entry into protected execution, not proof that the tool handler ran. An approval rejection can conservatively leave an uncertain record requiring reconciliation.
+
+### Handling Hermes middleware failures
+
+Hermes execution middleware can fail open when a callback raises before calling `next_call`. The guard therefore converts journal access, integrity, and admission failures into an explicit blocked result instead of throwing them into the middleware dispatcher.
+
+Downstream exceptions retain their original propagation behavior after a best-effort uncertainty record. If post-execution persistence fails, the guard returns `crash_recovery_record_failed` with `outcome_unknown: true` and sets an in-memory poison flag. The durable pending record or checkpoint inconsistency remains available for investigation after restart. The guard never invokes the downstream callback again to recover from a recording failure.
+
+## Journal format
+
+The profile-local data layout is:
+
+```text
+HERMES_HOME/plugin-data/crash-recovery/
+├── journal.sqlite3
+├── journal.sqlite3-wal    # when present
+├── journal.sqlite3-shm    # when present
+├── head.json
+└── initialized
+```
+
+SQLite stores the following tables:
+
+```sql
+CREATE TABLE metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE events (
+    seq INTEGER PRIMARY KEY,
+    payload TEXT NOT NULL,
+    previous TEXT NOT NULL,
+    hash TEXT NOT NULL
+);
+```
+
+`metadata` contains a journal UUID and schema identifier, `hermes.crash-recovery.v1`. The application appends events and reconstructs state from their history; the SQLite file itself is not immutable storage.
+
+Every payload contains `schema`, `timestamp_ns`, `kind`, and `operation_id`. Event-specific fields are:
+
+| Event | Additional fields | Reconstructed state |
+|---|---|---|
+| `started` | `tool`, `fingerprint`, `args_hash`, `session_id`, `tool_call_id` | `pending` |
+| `returned` | `result_hash`, `reason` | `returned` |
+| `uncertain` | `result_hash`, `reason` | `uncertain` |
+| `resolved` | `outcome`, `evidence` | `resolved` |
+
+Only `pending` and `uncertain` operations hold the gate closed. A resolution's `outcome` is either `completed` or `not_applied`. Already closed operations cannot be resolved a second time through the journal API.
+
+### Canonical encoding and hashes
+
+Let `C(x)` be UTF-8 JSON produced by:
+
+```python
+json.dumps(x, sort_keys=True, separators=(",", ":"),
+           ensure_ascii=False, allow_nan=False)
+```
+
+The genesis hash binds the journal identity:
+
+```text
+H0 = SHA256(C({"schema": SCHEMA, "journal_id": JOURNAL_UUID}))
+```
+
+For each event, `payload` is a canonical JSON **string**, and its hash is:
+
+```text
+Hi = SHA256(C({"previous": H(i-1), "payload": payload}))
+```
+
+The `started` event also records `args_hash = SHA256(C(args))` and `fingerprint = SHA256(C({"tool": tool_name, "args": args}))`. Fingerprints identify recorded inputs; they are not external-service idempotency keys or a semantic-equivalence detector.
+
+### Transactions and checkpoint ordering
+
+Connections use WAL mode with `synchronous=FULL`. Admission and verification acquire `BEGIN IMMEDIATE` so SQLite history and the filesystem checkpoint are observed under the same writer lock.
+
+An append performs these operations while holding that lock:
+
+1. Verify the existing sequence, hash links, event transitions, and exact local checkpoint.
+2. Insert the next event into the uncommitted SQLite transaction.
+3. Write a new checkpoint to a temporary file, flush it, call `fsync`, and replace `head.json` with `os.replace`.
+4. Commit the SQLite transaction.
+
+The checkpoint contains `schema`, `journal_id`, `count`, and `head`; it must exactly match the current journal summary. The downstream callback starts only after the admission transaction commits. The database lock is not held while a tool runs.
+
+The two storage files are not one atomic transaction. A crash between checkpoint replacement and SQLite commit can leave the checkpoint ahead of the database. That state deliberately blocks protected work. Existing inconsistent state is never silently reset; a surviving checkpoint, initialization marker, WAL, or SHM file also prevents recreation of a missing database.
+
+## Configuration and concurrency
+
+By default, the following exact names are exempt from protection:
+
+```text
+read_file
+search_files
+crash_recovery_status
+crash_recovery_verify
+```
+
+Configure additional trusted read-only tools in the active profile's `config.yaml`:
 
 ```yaml
 plugins:
@@ -108,56 +185,112 @@ plugins:
           - lookup_receipt
 ```
 
-The configured list replaces the defaults; the two inspection tools remain available. An exempt tool bypasses journaling entirely. Do not exempt a shell, interpreter, delegation tool or other write-capable tool.
+The configured list replaces the `read_file` / `search_files` defaults. The two inspection tools are always exempt. Exempt tools bypass journaling entirely; do not add shells, interpreters, delegation tools, or other write-capable tools. Unknown tool names remain protected. Restart Hermes after changing settings.
 
-V1 admits **one protected call at a time per profile**. A second concurrent call receives a refusal while the first is pending. Calls that spawn nested protected tools, including delegation/code-execution workflows, can therefore be blocked inside the outer call. Use direct tools for protected actions. Tools with asynchronous side effects are recorded only through their immediate response, not through the entire background job.
+V1 admits **one protected call at a time per profile**. Additional concurrent calls are refused while the first is pending; they are not queued. Nested protected calls can also be refused. A pending record may represent a currently running action, not necessarily a crashed process. The plugin does not infer safe retry from elapsed time, process age, or a timeout.
 
-## Integrity and storage
+## Inspection interfaces
 
-State stays under `HERMES_HOME/plugin-data/crash-recovery/`, outside the install directory:
+| Interface | Input | Result |
+|---|---|---|
+| `crash_recovery_status` | `{}` | Integrity status and unresolved operation metadata |
+| `crash_recovery_verify` | `{}` or `{"checkpoint": {...}}` | Verified journal summary, or an integrity error |
 
-- `journal.sqlite3` and SQLite WAL files: append-only event history.
-- `head.json`: atomically replaced local checkpoint.
-- `initialized`: detects a missing database in an already initialized data directory.
+A blocked invocation returns a JSON result containing `error: "crash_recovery_blocked"`, `blocked: true`, an explanation, and relevant `operation_ids` when available. No resolve, retry, or replay tool is registered for the model.
 
-Events contain operation/session/tool-call IDs, tool names, timestamps, argument fingerprints, result hashes and reconciliation decisions. Raw tool arguments, raw results and exception messages are not persisted. Hashes of predictable inputs can still be guessed; this is not encryption. IDs and operator evidence are stored as supplied.
+### Operator workflow
 
-Each event commits to its canonical payload and previous event hash. The separately stored checkpoint detects journal truncation and rollback. It is synced before the SQLite event commits, while holding the database writer lock: a crash in that narrow interval can leave the checkpoint ahead of the database. **This deliberately blocks recovery instead of guessing.** Restore a consistent backup or have an operator investigate; there is no automatic integrity reset.
+Run the operator utility from the repository or installed plugin directory. Supply the **active profile's** data directory:
 
-Export a checkpoint to storage independent of this data directory for stronger verification:
+```console
+python operator_cli.py --data-dir DATA_DIRECTORY status
+python operator_cli.py --data-dir DATA_DIRECTORY verify
+```
+
+To reconcile an operation:
+
+1. Stop all workers using the profile so the original action cannot still complete.
+2. Inspect independent service evidence, such as a receipt, request log, or database record.
+3. Append the appropriate decision with a nonempty evidence statement.
+
+```console
+python operator_cli.py --data-dir DATA_DIRECTORY resolve OPERATION_ID --outcome completed --evidence "Stopped the original worker; service receipt 123 confirms completion"
+python operator_cli.py --data-dir DATA_DIRECTORY resolve OPERATION_ID --outcome not_applied --evidence "Stopped the original worker; service request log confirms no write was applied"
+```
+
+These are alternative decisions, not commands to run consecutively on the same operation. `not_applied` permits a future normal invocation; it does not replay anything. If the outcome cannot be established, leave the operation unresolved. Reconciliation does not repair an integrity failure or erase history.
+
+Export and retain checkpoints independently of the journal directory:
 
 ```console
 python operator_cli.py --data-dir DATA_DIRECTORY checkpoint > independent-checkpoint.json
 python operator_cli.py --data-dir DATA_DIRECTORY verify --checkpoint independent-checkpoint.json
 ```
 
-The local checkpoint is not a cryptographic trust anchor against an attacker who can rewrite both files. Complete replacement or deletion of all local state is not detectable without independently retained evidence. The plugin is a recovery guard, not a sandbox against an agent or administrator with arbitrary filesystem access. Keep independent checkpoints and consistent backups outside the agent's authority when that threat matters.
+The CLI emits JSON. It exits with code `0` when inspection or reconciliation succeeds with valid integrity, and `1` on error. `status` can exit `0` while unresolved operations remain; consumers must inspect the `unresolved` array. A supplied external checkpoint is checked as an ancestor of the current journal, while the local checkpoint must match the current head exactly.
 
-`returned` proves that the tool returned a response; it does not prove an external business operation completed. Recognized JSON error fields (`error`, `isError`, `success: false`, `ok: false`, error statuses and nonzero `exit_code`) keep an operation uncertain. Unusual errors encoded as free text may require manual investigation. No generic journal can provide exactly-once external execution without cooperation from the service.
+## Error classification
 
-V1 verifies the full history on admission and completion. Work is linear in journal length and records are never automatically pruned. Use local storage with reliable SQLite locking; network filesystems and power-loss durability are not certified.
+Exceptions and cancellations preserve uncertainty. Returned dictionaries, or strings that decode to JSON dictionaries, are treated as error responses when they contain:
 
-## Verification
+- A truthy `error` field.
+- `isError: true`, `success: false`, or `ok: false`.
+- `status` equal to `error`, `failed`, `cancelled`, or `unknown`.
+- An integer `exit_code` other than zero.
+
+Other responses are recorded as `returned`. Error detection does not establish whether an external side effect occurred. Unusual free-text error formats and asynchronous work continuing after a tool returns are outside the generic classifier's guarantees.
+
+## Integrity boundary and data handling
+
+The hash chain and exact local checkpoint detect edited records, truncation, rollback, unanchored extensions, and missing or inconsistent local state. They are not a signature, a remote attestation, or a sandbox against an actor with arbitrary filesystem authority. An actor able to rewrite both the database and checkpoint can replace local history. Complete deletion of all local state cannot be distinguished from a fresh installation.
+
+An independently retained checkpoint can expose replacement of the prefix it commits to. Verification against an older checkpoint does not authenticate subsequent history. External checkpoints are verified only when explicitly supplied; they are not automatically enforced on admission.
+
+Raw arguments, raw tool results, and exception messages are not persisted. The journal does persist tool names, correlation IDs, timestamps, argument/result hashes, reason labels, and operator evidence. Hashes are not encryption and predictable inputs may be guessed. IDs and evidence are stored as supplied; keep secrets out of evidence text.
+
+All runtime persistence is local to the plugin data directory. The runtime plugin performs no network calls, shell execution, subprocess creation, credential-store reads, telemetry, or background processing. Optional demos/tests create disposable workers and databases in selected directories and deliberately terminate their own processes. The native demo additionally starts a loopback provider and isolated Hermes CLI/gateway under normal approval settings.
+
+Full history is verified on admission and completion: verification time and reconstructed state grow with event count. There is no automatic pruning. Network filesystems and power-loss durability have not been certified.
+
+## Demonstration and verification
+
+Run the standalone crash scenario without installing Hermes:
+
+```console
+python demo.py
+```
+
+It commits one fictional booking, force-kills its worker before the tool response is recorded, and verifies that a restarted worker cannot repeat the action. Use `--directory NEW_DIRECTORY` to retain its files.
+
+Run the regression suite and native checks:
 
 ```console
 python -m unittest discover -s tests -v
 hermes plugins doctor . --ci
 hermes plugins validate . --install-deps
 python tests/check_host.py --hermes-root PATH/TO/hermes-agent
-```
-
-The last command uses an unmodified Hermes checkout, a temporary profile, real plugin discovery, the real middleware dispatcher, the block hook, registered inspection tools, and the operator CLI. It checks that changing sessions/arguments and losing storage cannot bypass the guard. It does not make live model requests.
-
-For the full native CLI/gateway crash-and-restart scenario:
-
-```console
 python tests/native_demo.py --hermes-root PATH/TO/hermes-agent --directory PATH/TO/NEW_DEMO_DIRECTORY
 ```
 
-Run this with an interpreter containing Hermes's runtime dependencies. It starts the unmodified `hermes chat` CLI against a scripted, loopback-only OpenAI-compatible provider and a fictional local booking plugin. After the service commits a booking, it force-kills the isolated gateway, starts a new CLI session, verifies refusal of the changed-argument repeat, performs read-only inspection, stops the demo gateway and records operator reconciliation. The scripted provider deliberately requests the unsafe repeat; no live model or paid service is involved. The output directory retains JSONL session traces and the result report.
+The host checks require an interpreter containing Hermes's runtime dependencies. The native demonstration uses unmodified `hermes chat --format stream-json`, an isolated profile, a scripted localhost provider, and a fictional booking plugin. It force-kills the gateway after the booking commits, launches a new session, checks the actual refusal and read-only service results, then records operator reconciliation after stopping the workers.
 
-## Disclosures
+Recorded native result:
 
-The plugin performs local SQLite and checkpoint I/O inside its own data directory. It observes tool names, arguments, results and correlation IDs in memory to calculate hashes. It does not call a network service, run shell commands, read credential stores, modify Hermes core, or start background processes. The optional demo/test scripts spawn disposable local Python workers and use selected demonstration directories and databases; the demos deliberately force-kill their own workers. The native test also opens a temporary loopback HTTP provider and starts/stops an isolated Hermes CLI/gateway using its normal approval settings. CLI evidence is stored verbatim. Uninstalling or updating the plugin leaves its data intact. Disabling/removing the plugin also removes its protection.
+```json
+{
+  "native_cli_crash_and_restart": true,
+  "live_model": false,
+  "core_patched": false,
+  "bookings": 1,
+  "repeat_blocked": true,
+  "read_only_inspection": true,
+  "integrity_ok": true,
+  "unresolved_after_resolution": 0
+}
+```
 
-License: MIT.
+The provider is scripted, not a live model. Its narration is not the verification source: the harness checks native tool responses and the separate service database. [Selected CLI traces](docs/native-demo/README.md) and the [verification report](docs/verification.md) include the tested Hermes commit. The 21-test suite passed in CI on Ubuntu and Windows with Python 3.11, 3.13, and 3.14.
+
+## License
+
+[MIT](LICENSE).
