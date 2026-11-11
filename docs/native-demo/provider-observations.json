@@ -1,0 +1,89 @@
+[
+  {
+    "scenario": "crash",
+    "offered_tools": [
+      "crash_recovery_status",
+      "crash_recovery_verify",
+      "demo_book",
+      "demo_inspect"
+    ],
+    "tool_results": [],
+    "assistant_tool": "demo_book",
+    "assistant_text": null
+  },
+  {
+    "scenario": "restart",
+    "offered_tools": [
+      "crash_recovery_status",
+      "crash_recovery_verify",
+      "demo_book",
+      "demo_inspect"
+    ],
+    "tool_results": [],
+    "assistant_tool": "demo_book",
+    "assistant_text": null
+  },
+  {
+    "scenario": "restart",
+    "offered_tools": [
+      "crash_recovery_status",
+      "crash_recovery_verify",
+      "demo_book",
+      "demo_inspect"
+    ],
+    "tool_results": [
+      {
+        "tool_call_id": "demo-restart-0",
+        "content": "{\"error\": \"crash_recovery_blocked\", \"blocked\": true, \"message\": \"Protected execution paused: reconcile unresolved actions with the operator CLI.\", \"operation_ids\": [\"87643838-ec9d-408f-bb5f-3ccffcf5f42b\"], \"next_step\": \"Inspect crash_recovery_status; an operator must reconcile the outcome. Do not retry by changing tools or arguments.\"}"
+      }
+    ],
+    "assistant_tool": "demo_inspect",
+    "assistant_text": null
+  },
+  {
+    "scenario": "restart",
+    "offered_tools": [
+      "crash_recovery_status",
+      "crash_recovery_verify",
+      "demo_book",
+      "demo_inspect"
+    ],
+    "tool_results": [
+      {
+        "tool_call_id": "demo-restart-0",
+        "content": "{\"error\": \"crash_recovery_blocked\", \"blocked\": true, \"message\": \"Protected execution paused: reconcile unresolved actions with the operator CLI.\", \"operation_ids\": [\"87643838-ec9d-408f-bb5f-3ccffcf5f42b\"], \"next_step\": \"Inspect crash_recovery_status; an operator must reconcile the outcome. Do not retry by changing tools or arguments.\"}"
+      },
+      {
+        "tool_call_id": "demo-restart-1",
+        "content": "{\"booking_count\": 1, \"bookings\": [{\"id\": 1, \"name\": \"Ada\"}]}"
+      }
+    ],
+    "assistant_tool": "crash_recovery_status",
+    "assistant_text": null
+  },
+  {
+    "scenario": "restart",
+    "offered_tools": [
+      "crash_recovery_status",
+      "crash_recovery_verify",
+      "demo_book",
+      "demo_inspect"
+    ],
+    "tool_results": [
+      {
+        "tool_call_id": "demo-restart-0",
+        "content": "{\"error\": \"crash_recovery_blocked\", \"blocked\": true, \"message\": \"Protected execution paused: reconcile unresolved actions with the operator CLI.\", \"operation_ids\": [\"87643838-ec9d-408f-bb5f-3ccffcf5f42b\"], \"next_step\": \"Inspect crash_recovery_status; an operator must reconcile the outcome. Do not retry by changing tools or arguments.\"}"
+      },
+      {
+        "tool_call_id": "demo-restart-1",
+        "content": "{\"booking_count\": 1, \"bookings\": [{\"id\": 1, \"name\": \"Ada\"}]}"
+      },
+      {
+        "tool_call_id": "demo-restart-2",
+        "content": "{\"schema\": \"hermes.crash-recovery.v1\", \"journal_id\": \"79513fc3-92a1-4f2c-8eeb-d8005e6016b4\", \"count\": 1, \"head\": \"32784194cdba8e9a0e25896006f32990126ae8ef38dcd16839741ff87c69649c\", \"integrity_ok\": true, \"unresolved\": [{\"args_hash\": \"88bab6d8f6dc68a877064d584cbb5b6c50e74f617ea50d81d3a53c2ee6ffbc4f\", \"fingerprint\": \"f3927abab7996fec94e9ce85c1699658e21a2dde3ecf9fe6f9f357b0b9f3dd5c\", \"kind\": \"started\", \"operation_id\": \"87643838-ec9d-408f-bb5f-3ccffcf5f42b\", \"schema\": \"hermes.crash-recovery.v1\", \"session_id\": \"local-ccfe2be810facc5d89505cf19038aa886399ed6461b8a95c8e7c3c08edb0811c\", \"timestamp_ns\": 1794371378149173100, \"tool\": \"demo_book\", \"tool_call_id\": \"demo-crash-0\", \"state\": \"pending\"}]}"
+      }
+    ],
+    "assistant_tool": null,
+    "assistant_text": "Recovery blocked the uncertain repeat. Read-only inspection confirms exactly one booking. An operator must reconcile the original action."
+  }
+]

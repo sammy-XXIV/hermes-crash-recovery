@@ -1,0 +1,4 @@
+name: recovery-demo
+version: "0.1.0"
+description: Fictional local booking service for the isolated native recovery demonstration.
+provides_tools: [demo_book, demo_inspect]

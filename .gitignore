@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.sqlite3*
+.head-*.tmp
+head.json
+initialized
+demo-run*/
+dist/

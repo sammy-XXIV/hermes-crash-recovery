@@ -1,0 +1,12 @@
+{
+  "recovery.py": "ad506110fc4cddd57cb9ea9dbf8a9b83f7172b553dd81fa2b8e2f72cab70a569",
+  "__init__.py": "8f5ad4074c1ffe60b318f655956e6a32abd7ee9bd65e5d2fcb78744884f585b6",
+  "plugin.yaml": "ca1d81ff87959bc1c6f4a7bc8394314e437fbd82ff06b07e87807e598e09d943",
+  "operator_cli.py": "b12105c9933cddcaa4d812169ffa53c1f3c950eb0e436fcc40c570656f793707",
+  "demo.py": "a9549c1c40edb1fe0821bc3cae8d9880ee157276712ad7c428f105387bb8bc0b",
+  "tests/test_recovery.py": "0dd9813c95d06d392497c00ab7888d52a656e5db5199924288a313773ae21c57",
+  "tests/check_host.py": "fa767ca4d6cf9b397b0cb9694b7386ec33c08894f02a6bddbfd7bec837223722",
+  "tests/native_demo.py": "05bbec3cb00df89cc8ddfa1d7793cff02d6845c51283ce693d02036bcb8bd599",
+  "tests/fixtures/booking_plugin/__init__.py": "a5f3e59e98c1b24f9794e1593fe1bad2518702483b63ddd27a5242133849d826",
+  "tests/fixtures/booking_plugin/plugin.yaml": "a29a8e96fddeaf596fa978779b49a176091b7369f617b2d9e4cbe404875256aa"
+}

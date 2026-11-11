@@ -1,0 +1,19 @@
+name: crash-recovery
+version: "0.1.0"
+requires_hermes: ">=0.23.1"
+description: Durable tool-call journal with integrity verification and an operator-controlled recovery gate for uncertain actions.
+license: MIT
+config_schema:
+  read_only_tools:
+    type: list
+    default:
+      - read_file
+      - search_files
+    description: Exact trusted tool names allowed during recovery. Adding a write-capable tool bypasses journal protection for it.
+provides_tools:
+  - crash_recovery_status
+  - crash_recovery_verify
+provides_hooks:
+  - pre_tool_call
+provides_middleware:
+  - tool_execution

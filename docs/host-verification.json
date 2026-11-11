@@ -1,0 +1,98 @@
+{
+  "hermes_commit": "f19432adb7ac4aa2920797a7d092d3987012d4b2",
+  "python": "3.13.14",
+  "doctor_ok": true,
+  "doctor": "Plugin Doctor: C:\\Users\\Dell\\hermes-crash-recovery\n  manifest: crash-recovery 0.1.0 (standalone)\n  OK: runtime discovery, manifest parsing, import, and registration passed\n  registrations: 2 tool(s), 1 hook(s)",
+  "catalog_validation": {
+    "ok": true,
+    "checks": [
+      {
+        "name": "manifest",
+        "ok": true,
+        "detail": "plugin.yaml parses"
+      },
+      {
+        "name": "manifest fields",
+        "ok": true,
+        "detail": "name, version, description present"
+      },
+      {
+        "name": "requires_hermes",
+        "ok": true,
+        "detail": "spec '>=0.23.1' parses"
+      },
+      {
+        "name": "config schema",
+        "ok": true,
+        "detail": "shape valid"
+      },
+      {
+        "name": "requires_env",
+        "ok": true,
+        "detail": "all entries UPPER_SNAKE"
+      },
+      {
+        "name": "oauth",
+        "ok": true,
+        "detail": "not declared"
+      },
+      {
+        "name": "loadable",
+        "ok": true,
+        "detail": "entry: __init__.py"
+      },
+      {
+        "name": "python dependencies",
+        "ok": true,
+        "detail": "none declared"
+      },
+      {
+        "name": "capability probe",
+        "ok": true,
+        "detail": "register() ran in isolation"
+      },
+      {
+        "name": "declared tools",
+        "ok": true,
+        "detail": "matches registrations"
+      },
+      {
+        "name": "declared hooks",
+        "ok": true,
+        "detail": "matches registrations"
+      },
+      {
+        "name": "declared middleware",
+        "ok": true,
+        "detail": "matches registrations"
+      },
+      {
+        "name": "built-in tool collisions",
+        "ok": true,
+        "detail": "no collisions"
+      },
+      {
+        "name": "security scan",
+        "ok": true,
+        "detail": "safe"
+      },
+      {
+        "name": "no core override",
+        "ok": true,
+        "detail": "no runtime rebinds of Hermes core"
+      }
+    ],
+    "warnings": [],
+    "isolation": {
+      "verdict": "host",
+      "host_ready": true,
+      "reasons": [],
+      "notes": [],
+      "ctx_methods": [
+        "register_hook",
+        "register_middleware",
+        "register_tool"
+      ]
+    }
+  }
+}

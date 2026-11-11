@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "driver": "native Hermes CLI chat with a scripted localhost OpenAI-compatible provider",
+  "live_model": false,
+  "core_patched": false,
+  "native_cli_crash_and_restart": true,
+  "bookings": 1,
+  "repeat_blocked": true,
+  "read_only_inspection": true,
+  "integrity_ok": true,
+  "unresolved_after_resolution": 0,
+  "hermes_commit": "f19432adb7ac4aa2920797a7d092d3987012d4b2"
+}

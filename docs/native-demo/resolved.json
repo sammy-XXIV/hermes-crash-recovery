@@ -1,0 +1,8 @@
+{
+  "schema": "hermes.crash-recovery.v1",
+  "journal_id": "79513fc3-92a1-4f2c-8eeb-d8005e6016b4",
+  "count": 2,
+  "head": "97e6911acfeb59e18299a57219001a9d1bb61210a8e22de8aa14ddc445666a6e",
+  "integrity_ok": true,
+  "unresolved": []
+}
